@@ -11,8 +11,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{701DB500-FD9F-4F07-9B8F-2F75638AB8C2}</ProjectGuid>
-    <RootNamespace>libgraphterm</RootNamespace>
+    <ProjectGuid>{C372C64E-EBD7-4F32-BC78-7DDFAD00F3B7}</ProjectGuid>
+    <RootNamespace>shadercompiler</RootNamespace>
+    <ProjectName>libshadercompiler</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -48,12 +49,6 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
-    <CustomBuild>
-      <Command>bison $(InputPath)</Command>
-    </CustomBuild>
-    <CustomBuild>
-      <TreatOutputAsContent>true</TreatOutputAsContent>
-    </CustomBuild>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -70,29 +65,42 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\raster_types.h" />
-    <ClInclude Include="..\..\..\screen.h" />
-    <ClInclude Include="..\..\..\simple_raster.h" />
-    <ClInclude Include="..\..\..\style_bytecode.h" />
+    <ClCompile Include="..\..\stylecompiler\ast.c" />
+    <ClCompile Include="..\..\stylecompiler\compiler.c" />
+    <ClCompile Include="..\..\stylecompiler\eval.c" />
+    <ClCompile Include="..\..\stylecompiler\evalchain.c" />
+    <ClCompile Include="..\..\stylecompiler\stylecompiler.gen.c" />
+    <ClCompile Include="..\..\stylecompiler\stylelexer.gen.c" />
+    <ClCompile Include="..\..\stylecompiler\transform.c" />
+    <ClCompile Include="..\..\styledisasm.c" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\data2c.py">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-    </None>
-    <None Include="..\..\..\gen_hashsizes.js" />
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="..\..\..\math_impl.sl">
-      <FileType>CppCode</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">python %(RootDir)\%(Directory)\data2c.py %(FullPath) </Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_math_impl.sl.gen.c</Outputs>
+    <CustomBuild Include="..\..\stylecompiler\stylecompiler.y">
+      <FileType>Document</FileType>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stylecompiler.gen.c</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stylecompiler.gen.c</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">bison --defines=%(RootDir)\%(Directory)\%(Filename).gen.h -o %(RootDir)\%(Directory)\%(Filename).gen.c %(FullPath) </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">bison --defines=%(RootDir)\%(Directory)\%(Filename).gen.h -o %(RootDir)\%(Directory)\%(Filename).gen.c %(FullPath) </Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Generating style compiler tables</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Generating style compiler tables</Message>
     </CustomBuild>
-    <ClCompile Include="..\..\..\math_impl.sl.gen.c" />
-    <ClCompile Include="..\..\..\raster_types.c" />
-    <ClCompile Include="..\..\..\stylecompiler\transform.c" />
-    <ClCompile Include="..\..\..\style_bytecode.c" />
-    <ClCompile Include="..\..\..\simple_raster.c" />
-    <ClCompile Include="..\..\..\test.c" />
+    <CustomBuild Include="..\..\stylecompiler\stylelexer.l">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">flex --noline --nounistd --bison-locations --bison-bridge -o %(RootDir)\%(Directory)\%(Filename).gen.c %(FullPath)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">flex --noline --nounistd --bison-locations --bison-bridge -o %(RootDir)\%(Directory)\%(Filename).gen.c %(FullPath)</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stylelexer.gen.c</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stylelexer.gen.c</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\stylecompiler\ast.h" />
+    <ClInclude Include="..\..\stylecompiler\compiler.h" />
+    <ClInclude Include="..\..\stylecompiler\eval.h" />
+    <ClInclude Include="..\..\stylecompiler\stylecompiler.gen.h" />
+    <ClInclude Include="..\..\stylecompiler\styletokens.h" />
+    <ClInclude Include="..\..\stylecompiler\transform.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

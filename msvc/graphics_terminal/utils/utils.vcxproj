@@ -11,8 +11,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{701DB500-FD9F-4F07-9B8F-2F75638AB8C2}</ProjectGuid>
-    <RootNamespace>libgraphterm</RootNamespace>
+    <ProjectGuid>{B7F45C33-415F-4C5E-8E74-84AC2500EA44}</ProjectGuid>
+    <RootNamespace>utils</RootNamespace>
+    <ProjectName>libutils</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -48,12 +49,7 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
-    <CustomBuild>
-      <Command>bison $(InputPath)</Command>
-    </CustomBuild>
-    <CustomBuild>
-      <TreatOutputAsContent>true</TreatOutputAsContent>
-    </CustomBuild>
+    <ProjectReference />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -70,29 +66,23 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\raster_types.h" />
-    <ClInclude Include="..\..\..\screen.h" />
-    <ClInclude Include="..\..\..\simple_raster.h" />
-    <ClInclude Include="..\..\..\style_bytecode.h" />
+    <ClInclude Include="..\..\..\alloc.h" />
+    <ClInclude Include="..\..\..\floatutil.h" />
+    <ClInclude Include="..\..\..\half.hpp" />
+    <ClInclude Include="..\..\..\hash.h" />
+    <ClInclude Include="..\..\..\list.h" />
+    <ClInclude Include="..\..\..\memarena.h" />
+    <ClInclude Include="..\..\..\strhash.h" />
+    <ClInclude Include="..\..\..\strutils.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\data2c.py">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-    </None>
-    <None Include="..\..\..\gen_hashsizes.js" />
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="..\..\..\math_impl.sl">
-      <FileType>CppCode</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">python %(RootDir)\%(Directory)\data2c.py %(FullPath) </Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_math_impl.sl.gen.c</Outputs>
-    </CustomBuild>
-    <ClCompile Include="..\..\..\math_impl.sl.gen.c" />
-    <ClCompile Include="..\..\..\raster_types.c" />
-    <ClCompile Include="..\..\..\stylecompiler\transform.c" />
-    <ClCompile Include="..\..\..\style_bytecode.c" />
-    <ClCompile Include="..\..\..\simple_raster.c" />
-    <ClCompile Include="..\..\..\test.c" />
+    <ClCompile Include="..\..\..\alloc.c" />
+    <ClCompile Include="..\..\..\floatutil.cpp" />
+    <ClCompile Include="..\..\..\hash.c" />
+    <ClCompile Include="..\..\..\list.c" />
+    <ClCompile Include="..\..\..\memarena.c" />
+    <ClCompile Include="..\..\..\strhash.c" />
+    <ClCompile Include="..\..\..\strutils.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

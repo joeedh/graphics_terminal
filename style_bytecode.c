@@ -4,6 +4,7 @@
 #include "raster_types.h"
 #include "style_bytecode.h"
 #include "simple_raster.h"
+
 #include <math.h>
 #include <string.h>
 #include <float.h>
@@ -12,9 +13,16 @@
 
 #include "floatutil.h"
 
-#define READ() m->code[m->ip++]
+#define READ() bytecode[ip++]
 #define LOADFC() c16[0] = READ(); c16[1] = READ(); fc = f16_to_f32(i16)
 #define LOADI2() c16[0] = READ(); c16[1] = READ()
+
+typedef struct BuiltinBlock {
+	char *code, *original;
+	int codelen, retreg;
+	int argregs[4], totarg;
+	int bytecode;
+} BuiltinBlock;
 
 typedef struct CompiledCode {
 	char *code;
@@ -24,16 +32,315 @@ typedef struct CompiledCode {
 	void (__fastcall *execpixel)(__m128 *regs);
 } CompiledCode;
 
+typedef struct BuiltIns {
+	HashTable builtins;
+} BuiltIns;
+
+#define BUILTIN_RETREG = ROUT
+#define BUILTIN_ARG1   = YIN
+#define BUILTIN_ARG2   = UIN
+#define BUILTIN_ARG3   = VIN
+#define BUILTIN_ARG4   = XIN
+
+extern char _math_impl_sl_data[];
+extern const size_t _math_impl_sl_size;
+
+static BuiltIns _builtins;
+static int setup_builtins = 1;
+
 static int code_out(CompiledCode *code, const char *str, ...);
 
-CompiledCode *statemachine_compile(StyleMachine *m) {
+CompiledCode *statemachine_emit_sse_block(unsigned char *bytecode, unsigned char *bytelen, 
+	                                      CompiledCode *code, CompiledCode *consts, int conststart) 
+{
+	if (setup_builtins) {
+		setup_builtins = 0;
+		compile_builtins();
+	}
+
 	short i16;
 	unsigned char *c16 = (unsigned char*) &i16;
 	float fc = 0;
+	int argregs[32];
 	char buf[256];
+	int totconst=conststart;
+	int ip = 0;
+
+	while (ip < bytelen) {
+		unsigned char c = READ();
+
+		switch (c)  {
+			  case MOV_RC: {
+				  char r = READ();
+				  LOADFC();
+
+				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
+				  code_out(code, "movaps fr0, [ecx+f32const%d]\n", totconst);
+				  code_out(code, "movaps [ebx+%d], fr0\n", r*16);
+				  totconst++;
+
+				  break;
+			  } 
+
+			  case MOV_RND: {  //mov reg, num/denom
+				  char r = READ();
+				  float num, denom;
+
+				  LOADI2();
+				  num = i16;
+
+				  LOADI2();
+				  denom = i16;
+
+				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
+				  code_out(code, "movaps fr0, [ecx+f32const%d]\n", totconst);
+				  code_out(code, "movaps [ebx+%d], fr0\n", r*16);
+				  totconst++;
+
+				  break;
+			  }
+			  case MOV_RR: { 
+				  char r1 = READ(), r2 = READ();
+				  //m->regs[r1] = m->regs[r2];
+				  
+				  code_out(code, "movaps fr0, [ebx+%d]\n", r2*16);
+				  code_out(code, "movaps [ebx+%d], fr0\n", r1*16);
+
+				  break;
+			  }
+			  case MOV_R4TEX: {  //regbase[1], tex[int2], u[2], v[2] //loads texture data into 4 consequtive registers
+				  //XXX implement me!
+				  break;
+			  }
+			  case ADD_RR: { 
+				  char r1 = READ(), r2 = READ();
+
+				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "addps fr0, [ebx + %d]\n", r2*16);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+				  break;
+			  }
+			  case ADD_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+   				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "addps  fr0, [ecx + f32const%d]\n", totconst);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+
+				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
+				  totconst++;
+
+				  break;
+			  }
+			  case SUB_RR: { 
+				  char r1 = READ(), r2 = READ();
+
+				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "subps fr0, [ebx + %d]\n", r2*16);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+				  break;
+			  }
+			  case SUB_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+   				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "subps  fr0, [ecx + f32const%d]\n", totconst);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+
+				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
+				  totconst++;
+
+				  break;
+			  }
+			  case MUL_RR: { 
+				  char r1 = READ(), r2 = READ();
+
+				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "mulps fr0, [ebx + %d]\n", r2*16);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+				  break;
+			  }
+			  case MUL_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+   				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "mulps  fr0, [ecx + f32const%d]\n", totconst);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+
+				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
+				  totconst++;
+
+				  break;
+			  }
+			  case DIV_RR: { 
+				  char r1 = READ(), r2 = READ();
+
+				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "divps fr0, [ebx + %d]\n", r2*16);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+				  break;
+			  }
+			  case DIV_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+   				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
+				  code_out(code, "divps  fr0, [ecx + f32const%d]\n", totconst);
+				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
+
+				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
+				  totconst++;
+
+				  break;
+			  }
+			  case LTN_RR: { 
+				  char r1 = READ(), r2 = READ();
+				  //m->regs[r1] = m->regs[r1] < m->regs[r2] ? 1.0f :  0.0f;
+				  break;
+			  }
+			  case LTN_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+				  //m->regs[r1] = m->regs[r1] < fc ? 1.0f :  0.0f;
+				  break;
+			  }
+			  case GTN_RR: { 
+				  char r1 = READ(), r2 = READ();
+				  //m->regs[r1] = m->regs[r1] > m->regs[r2] ? 1.0f : 0.0f;
+				  break;
+			  }
+			  case GTN_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+				  //m->regs[r1] = m->regs[r1] > fc ? 1.0f : 0.0f;
+				  break;
+			  }
+			  case EQL_RR: { 
+				  char r1 = READ(), r2 = READ();
+				  //m->regs[r1] = m->regs[r1] == m->regs[r2] ? 1.0f : 0.0f;
+				  break;
+			  }
+			  case EQL_RC: { 
+				  char r1 = READ();
+				  LOADFC();
+
+				  //m->regs[r1] = m->regs[r1] == fc ? 1.0f : 0.0f;
+				  break;
+			  }
+			  case TRU: { 
+				  char r = READ();
+				  //m->regs[r] = (m->regs[r] > 0.0 || m->regs[r] < 0.0) ? 1.0f : 0.0f;
+				  break;
+			  }
+			  case SIN_RR: { 
+				  char r1 = READ(), r2 = READ();
+				  argregs[0] = r2;
+
+				  BuiltinBlock *block = get_and_link_builtin(SIN_RR, r1, argregs);
+				  printf("\n====inlined macro bytecode disassembly====\n");
+				  style_disasm(block->code, block->codelen);
+
+				  statemachine_emit_sse_block(block->code, block->codelen, code, consts, totconst);
+
+				  //m->regs[r1] = (float) sin((double)m->regs[r2]);
+				  break;
+			  }
+			  case COS_RR: {
+				  break;
+			  }
+			  case ASIN_RR: { 
+				  break;
+			  }
+			  case ACOS_RR: { 
+				  break;
+			  }
+			  case TAN_RR: { 
+				  break;
+			  }
+			  case ATAN_RR: { 
+				  break;
+			  }
+			  case SQRT_RR: { 
+				  break;
+			  }
+			  case LOG_RR: { 
+				  break;
+			  }
+			  case LOG2_RR: { 
+				  break;
+			  }
+			  case POW_RRR: { 
+				  break;
+			  }
+			  case POW_RRC: { 
+				  break;
+			  }
+			  case CBT_RR: { 
+				  break;
+			  }
+			  case FRC_RR: { 
+				  char r1 = READ(), r2 = READ();
+
+				  code_out(code, "movaps       fr0,        [ebx + %d]\n", r2*16);
+				  code_out(code, "movaps       fr2,        fr0\n");
+				  code_out(code, "cvttps2dq    fr1,        fr0\n");
+				  code_out(code, "psrld        fr0,        31\n");
+	  			  code_out(code, "psubd        fr1,        fr0\n");
+  				  code_out(code, "cvtdq2ps     fr0,        fr1\n");
+
+				  code_out(code, "subps        fr2,        fr0\n", r1*16);
+				  code_out(code, "movaps       [ebx + %d], fr2\n", r1*16);
+
+				  //m->regs[r1] = m->regs[r2] - floor(m->regs[r2]);
+				  break;
+			  }
+			  case END: { 
+				  ip = bytelen;
+				  break;
+			  }
+			  case MAD_RRR: {//fused multiply and add
+				  char r1 = READ(), r2 = READ(), r3 = READ();
+
+				  //m->regs[r1] = m->regs[r1] * m->regs[r2] + m->regs[r3];
+				  break;
+			  }
+			  case MIN_RR: {
+				  char r1 = READ(), r2 = READ();
+
+				  //m->regs[r1] = m->regs[r1] < m->regs[r2] ? m->regs[r1] : m->regs[r2];
+				  break;
+			  }
+			  case MAX_RR: {
+				  char r1 = READ(), r2 = READ();
+
+				  //m->regs[r1] = m->regs[r1] < m->regs[r2] ? m->regs[r1] : m->regs[r2];
+				  break;
+			  }
+			  case ABS_RR: {
+				  char r1 = READ(), r2 = READ();
+				  code_out(code, "movaps       fr0,         [ebx + %d]\n", r2*16);
+				  code_out(code, "andps        fr0,         [ecx + unsign_mask]\n");
+				  code_out(code, "movaps       [ebx + %d],  fr0\n", r1*16);
+				  break;
+			  }
+			  default: { 
+				  fprintf(stderr, "unknown opcode 0x%x\n", (int)code);
+				  return 0;
+				  break;
+			  }
+		}
+	}
+}
+
+CompiledCode *statemachine_compile(StyleMachine *m) {
+
 	CompiledCode *code = MEM_calloc(sizeof(*code));
 	CompiledCode *consts = MEM_calloc(sizeof(*consts));
-	int totconst=0;
 
 	//generates function that takes one argument, float regs[4][128];
 
@@ -89,216 +396,13 @@ CompiledCode *statemachine_compile(StyleMachine *m) {
 
 	code_out(code, "\n.next:\n");
 
-	while (m->ip < m->codelen) {
-		unsigned char c = READ();
+	code_out(consts, "unsign_mask: dd 0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff\n"); 
+	//__m128 unsign_mask;
+	//unsigned int *i = (int*)unsign_mask;
+	//i[0] = i[1] = i[2] = i[3] = ~(1<<31);
 
-		switch (c)  {
-			  case MOV_RC: {
-				  char r = READ();
-				  LOADFC();
-
-
-				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
-				  code_out(code, "movaps fr0, [ecx+f32const%d]\n", totconst);
-				  code_out(code, "movaps [ebx+%d], fr0\n", r*16);
-				  totconst++;
-
-				  break;
-			  } 
-
-			  case MOV_RND: {  //mov reg, num/denom
-				  char r = READ();
-				  float num, denom;
-
-				  LOADI2();
-				  num = i16;
-
-				  LOADI2();
-				  denom = i16;
-
-				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
-				  code_out(code, "movaps fr0, [ecx+f32const%d]\n", totconst);
-				  code_out(code, "movaps [ebx+%d], fr0\n", r*16);
-				  totconst++;
-
-				  break;
-			  }
-			  case MOV_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] = m->regs[r2];
-				  
-				  code_out(code, "movaps fr0, [ebx+%d]\n", r2*16);
-				  code_out(code, "movaps [ebx+%d], fr0\n", r1*16);
-
-				  break;
-			  }
-			  case MOV_R4TEX: {  //regbase[1], tex[int2], u[2], v[2] //loads texture data into 4 consequtive registers
-				  //XXX implement me!
-				  break;
-			  }
-			  case ADD_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  //m->regs[r1] += m->regs[r2];
-				  break;
-			  }
-			  case ADD_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-				  m->regs[r1] += fc;
-				  break;
-			  }
-			  case SUB_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] -= m->regs[r2];
-				  break;
-			  }
-			  case SUB_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-				  m->regs[r1] -= fc;
-				  break;
-			  }
-			  case MUL_RR: { 
-				  char r1 = READ(), r2 = READ();
-
-				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
-				  code_out(code, "mulps fr0, [ebx + %d]\n", r2*16);
-				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
-				  break;
-			  }
-			  case MUL_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-   				  code_out(code, "movaps fr0, [ebx + %d]\n", r1*16);
-				  code_out(code, "mulps  fr0, [ecx + f32const%d]\n", totconst);
-				  code_out(code, "movaps [ebx + %d], fr0\n", r1*16);
-
-				  code_out(consts, "f32const%d: dd %.5f, %.5f, %.5f, %.5f\n", totconst, fc, fc, fc, fc);
-				  totconst++;
-
-				  break;
-			  }
-			  case DIV_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] /= m->regs[r2];
-				  break;
-			  }
-			  case DIV_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-				  m->regs[r1] /= fc;
-				  break;
-			  }
-			  case LTN_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] = m->regs[r1] < m->regs[r2] ? 1.0f :  0.0f;
-				  break;
-			  }
-			  case LTN_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-				  m->regs[r1] = m->regs[r1] < fc ? 1.0f :  0.0f;
-				  break;
-			  }
-			  case GTN_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] = m->regs[r1] > m->regs[r2] ? 1.0f : 0.0f;
-				  break;
-			  }
-			  case GTN_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-				  m->regs[r1] = m->regs[r1] > fc ? 1.0f : 0.0f;
-				  break;
-			  }
-			  case EQL_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] = m->regs[r1] == m->regs[r2] ? 1.0f : 0.0f;
-				  break;
-			  }
-			  case EQL_RC: { 
-				  char r1 = READ();
-				  LOADFC();
-
-				  m->regs[r1] = m->regs[r1] == fc ? 1.0f : 0.0f;
-				  break;
-			  }
-			  case TRU: { 
-				  char r = READ();
-				  m->regs[r] = (m->regs[r] > 0.0 || m->regs[r] < 0.0) ? 1.0f : 0.0f;
-				  break;
-			  }
-			  case SIN_RR: { 
-				  char r1 = READ(), r2 = READ();
-				  m->regs[r1] = (float) sin((double)m->regs[r2]);
-				  break;
-			  }
-			  case COS_RR: { 
-				  break;
-			  }
-			  case ASIN_RR: { 
-				  break;
-			  }
-			  case ACOS_RR: { 
-				  break;
-			  }
-			  case TAN_RR: { 
-				  break;
-			  }
-			  case ATAN_RR: { 
-				  break;
-			  }
-			  case SQRT_RR: { 
-				  break;
-			  }
-			  case LOG_RR: { 
-				  break;
-			  }
-			  case LOG2_RR: { 
-				  break;
-			  }
-			  case POW_RRR: { 
-				  break;
-			  }
-			  case POW_RRC: { 
-				  break;
-			  }
-			  case CBT_RR: { 
-				  break;
-			  }
-			  case FRC_RR: { 
-				  char r1 = READ(), r2 = READ();
-
-				  code_out(code, "movaps       fr0,        [ebx + %d]\n", r2*16);
-				  code_out(code, "movaps       fr2,        fr0\n");
-				  code_out(code, "cvttps2dq    fr1,        fr0\n");
-				  code_out(code, "psrld        fr0,        31\n");
-	  			  code_out(code, "psubd        fr1,        fr0\n");
-  				  code_out(code, "cvtdq2ps     fr0,        fr1\n");
-
-				  code_out(code, "subps        fr2,        fr0\n", r1*16);
-				  code_out(code, "movaps       [ebx + %d], fr2\n", r1*16);
-
-				  m->regs[r1] = m->regs[r2] - floor(m->regs[r2]);
-				  break;
-			  }
-			  case END: { 
-				  m->ip = m->codelen;
-				  break;
-			  }
-			  default: { 
-				  fprintf(stderr, "unknown opcode 0x%x\n", (int)code);
-				  return 0;
-				  break;
-			  }
-		}
-	}
+	//main compilation loop
+	statemachine_emit_sse_block(m->code, m->codelen, code, consts, 0);
 
 	//code_out(code, "movaps xmm0, [esp]\n");
 	//code_out(code, "add esp, 16\n");
@@ -433,7 +537,9 @@ CompiledCode *statemachine_compile(StyleMachine *m) {
 int statemachine_exec(StyleMachine *m) {
 	short i16;
 	unsigned char *c16 = (unsigned char*) &i16;
+	unsigned char *bytecode = m->code;
 	float fc = 0;
+	int ip = 0;
 
 	if (!m->style->ccode) {
 		CompiledCode *code = statemachine_compile(m);
@@ -441,14 +547,15 @@ int statemachine_exec(StyleMachine *m) {
 		m->style->ccode = code;
 	}
 
-	//m->style->ccode->bad = 1; //XXX
-
+	//*
 	if (!m->style->ccode->bad) {
 		m->style->ccode->execpixel(m->mregs);
 		return 1;
-	}
+	}//*/
 
-	while (m->ip < m->codelen) {
+	m->style->ccode->bad = 1;
+
+	while (ip < m->codelen) {
 		unsigned char code = READ();
 
 		switch (code)  {
@@ -615,7 +722,31 @@ int statemachine_exec(StyleMachine *m) {
 				  break;
 			  }
 			  case END: { 
-				  m->ip = m->codelen;
+				  ip = m->codelen;
+				  break;
+			  }
+			  case MAD_RRR: {//fused multiply and add
+				  char r1 = READ(), r2 = READ(), r3 = READ();
+
+				  m->regs[r1] = m->regs[r1] * m->regs[r2] + m->regs[r3];
+				  break;
+			  }
+			  case MIN_RR: {
+				  char r1 = READ(), r2 = READ();
+
+				  m->regs[r1] = m->regs[r1] < m->regs[r2] ? m->regs[r1] : m->regs[r2];
+				  break;
+			  }
+			  case MAX_RR: {
+				  char r1 = READ(), r2 = READ();
+
+				  m->regs[r1] = m->regs[r1] < m->regs[r2] ? m->regs[r1] : m->regs[r2];
+				  break;
+			  }
+			  case ABS_RR: {
+				  char r1 = READ(), r2 = READ();
+
+				  m->regs[r1] = fabs(m->regs[r2]);
 				  break;
 			  }
 			  default: { 
@@ -723,4 +854,93 @@ static int code_out(CompiledCode *code, const char *str, ...) {
 	code->code[code->codelen] = 0;
 
 	return 1;
+}
+
+static int do_builtin1(char *name, int bytecode) {
+	int codelen = _math_impl_sl_size + 256;
+	char *code = MEM_calloc(codelen);
+	
+	memcpy(code, _math_impl_sl_data, _math_impl_sl_size);
+	code[_math_impl_sl_size] = 0;
+
+	char line[64];
+	sprintf_s(line, sizeof(line), "\nr = %s1(y);\n\n", name);
+	strncat_s(code, codelen, line, sizeof(line));
+
+	int bytelen=0;
+	char *code2 = compilestyle(code, strlen(code), &bytelen);
+	
+	if (!code2) {
+		return 0;
+	}
+
+	BuiltinBlock *block = MEM_calloc(sizeof(*block));
+
+	block->code = code2;
+	block->original = MEM_malloc(bytelen);
+	memcpy(block->original, code2, bytelen);
+
+	block->codelen = bytelen;
+	block->bytecode = bytecode;
+
+	block->totarg = 1;
+	block->argregs[0] = INY;
+	block->retreg = OUTR;
+
+	hashtable_set(&_builtins.builtins, bytecode, block);
+	return 1;
+}
+
+void compile_builtins() {
+	memset(&_builtins, 0, sizeof(_builtins));
+	hashtable_init(&_builtins.builtins);
+
+	do_builtin1("sin", SIN_RR);
+}
+
+void relink_register(BuiltinBlock *block, int oldr, int newr) {
+	char *code = block->code;
+	int len = block->codelen;
+	int i;
+
+	while (len > 0) {
+		unsigned char *regs[32];
+		int totregs = bytecode_get_regs(code, len, regs);
+		
+		for (i=0; i<totregs; i++) {
+			if (*regs[i] == oldr) {
+				*regs[i] = newr;
+			}
+		}
+
+		len -= bytecode_lens[*code];
+		code += bytecode_lens[*code];
+	}
+}
+
+BuiltinBlock *get_and_link_builtin(int bytecode, int retreg, int argregs[32]) {
+	BuiltinBlock *block = hashtable_get(&_builtins.builtins, bytecode);
+	int i;
+
+	if (!block) {
+		return NULL;
+	}
+
+	//restore original unlinked bytecode
+	memcpy(block->code, block->original, block->codelen);
+
+	//relink first 25 registers to 50+
+	for (i=0; i<25; i++) {
+		relink_register(block, i, i+25);
+	}
+
+	//relink register used for return value
+	relink_register(block, block->retreg, retreg);
+
+	//relink argument registers. . .
+	for (i=0; i<block->totarg; i++) {
+		relink_register(block, block->argregs[i], argregs[i]);
+	}
+
+	return block;
 }

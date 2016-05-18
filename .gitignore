@@ -1,0 +1,7 @@
+*.log
+*\/ipch\/*
+*\/Debug\/*
+*.obj
+*.o
+*.lib
+*.a

@@ -39,9 +39,26 @@ enum {
   POW_RRR,
   POW_RRC,
   CBT_RR,
-  FRC_RR,
-  END
+  FRC_RR, //fract
+  END,
+  MAD_RRR, //fused multiply and add
+  MIN_RR,
+  MAX_RR,
+  RCP_RR, //reciprical
+  ABS_RR
 }; //bytecode
+
+struct BuiltinBlock;
+
+void style_disasm(unsigned char *buf, int len);
+
+//returns number of registers bytecode at *buf has, as well as pointers to them
+int bytecode_get_regs(unsigned char *buf, int len, unsigned char *regs[32]);
+
+void compile_builtins();
+int bytecode_lens[]; //size in bytes of each bytecode instruction
+
+struct BuiltinBlock *get_and_link_builtin(int bytecode, int retreg, int argregs[32]);
 
 enum {
 	R0=0,

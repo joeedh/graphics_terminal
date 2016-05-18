@@ -8,7 +8,9 @@
 #include "list.h"
 #include "hash.h"
 #include "floatutil.h"
+#include "strhash.h"
 
+#include "stylecompiler/compiler.h"
 #include "raster_types.h"
 #include "style_bytecode.h"
 
@@ -36,27 +38,80 @@ char fb(float f) {
 static Style *_redstyle=NULL;
 
 void init_default_styles() {
+	/*
 	unsigned char code[] = {
 		MOV_RC, OUTR, FCONST(1.0f),
 		MOV_RC, OUTG, FCONST(0.5f),
 		MOV_RC, OUTB, FCONST(0.0f),
 		MOV_RC, OUTA, FCONST(0.8f),
 
-		//let's make a little corner gradient
+		//let's make a little triangle wave corner gradient
 		MUL_RR, OUTR, INU,
 		MUL_RR, OUTR, INV,
 		MUL_RC, OUTR, FCONST(5.0f),
 		FRC_RR, OUTR, OUTR,
 		END
 	};
+	//*/
+
+	unsigned char fallback_code[] = {
+		MOV_RR, 0x5, 0x7f,
+		MOV_RR, 0xf, 0x7d,
+		MUL_RR, 0x5, 0xf,
+		MOV_RR, 0x75, 0x5,
+		MOV_RR, 0x5, 0x7d,
+		MOV_RR, 0xf, 0x7d,
+		MOV_RR, 0x10, 0x7c,
+		MOV_RR, 0x11, 0x7c,
+		MUL_RR, 0x10, 0x11,
+		ADD_RR, 0xf, 0x10,
+		MUL_RR, 0x5, 0xf,
+		MOV_RC, 0xf, 0x99, 0x49,
+		MUL_RR, 0x5, 0xf,
+		FRC_RR, 0x5, 0x5,
+		MOV_RR, 0x73, 0x5,
+		MOV_RR, 0x5, 0x7e,
+		MOV_RR, 0xf, 0x7c,
+		MUL_RR, 0x5, 0xf,
+		MOV_RR, 0x74, 0x5,
+	};
+
+#if 0
+	char *script = 
+		"float tent(float f) {\n"
+		"	return 1.0 - abs(fract(f)-0.5)*2.0;\n"
+		"}\n"
+
+		"\n"
+
+		"r = u;\n"
+		"g = v;\n"
+		"b = tent((u*u + v*v)*11.2);\n";
+#elif 1
+	char *script = 
+		"r = 0.0;\n"
+		"g = 0.1;\n"
+		//"b = 1.0 - abs(fract(v * 10.159149 + 1.570796) - 0.500000)*2.0;\n"
+		"b = sin((u*u + v*v)*11.2);\n"
+		//"b = 0.0;\n"
+	;
+#endif
+
+	int codelen=0;
+	unsigned char *code = compilestyle(script, strlen(script), &codelen);
+
+	if (!code) {
+		code = fallback_code;
+		codelen = sizeof(fallback_code);
+	}
 
 	Style *style = MEM_calloc(sizeof(*style));
 
-	style->codelen = sizeof(code);
-	style->code = MEM_malloc(sizeof(code));
+	style->codelen = codelen;
+	style->code = MEM_malloc(codelen);
 	style->ccode = NULL;
-	memcpy(style->code, code, sizeof(code));
 
+	memcpy(style->code, code, codelen);
 	_redstyle = style;
 }
 

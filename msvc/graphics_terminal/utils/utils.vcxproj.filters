@@ -15,50 +15,52 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\raster_types.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="..\..\..\floatutil.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\screen.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="..\..\..\half.hpp">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\simple_raster.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="..\..\..\memarena.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\style_bytecode.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="..\..\..\list.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\hash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\alloc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\strutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\strhash.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\gen_hashsizes.js">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="..\..\..\data2c.py">
-      <Filter>Source Files</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\..\raster_types.c">
+    <ClCompile Include="..\..\..\memarena.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\simple_raster.c">
+    <ClCompile Include="..\..\..\list.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\test.c">
+    <ClCompile Include="..\..\..\hash.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\style_bytecode.c">
+    <ClCompile Include="..\..\..\floatutil.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\stylecompiler\transform.c">
+    <ClCompile Include="..\..\..\alloc.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\math_impl.sl.gen.c">
+    <ClCompile Include="..\..\..\strutils.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="..\..\..\math_impl.sl">
+    <ClCompile Include="..\..\..\strhash.c">
       <Filter>Source Files</Filter>
-    </CustomBuild>
+    </ClCompile>
   </ItemGroup>
 </Project>
